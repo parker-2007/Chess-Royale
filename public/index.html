@@ -267,7 +267,7 @@ function requestRematch(){
 socket.on('playerLeft',()=>{ document.getElementById('disconnected').style.display='block'; });
 
 // ── Game state ─────────────────────────────────────────────────────────────
-let gameState=null, selected=null, selectedCard=-1;
+let gameState=null, selected=null, selectedCard=-1, _touchActive=false;
 
 socket.on('state',(state)=>{
   gameState=state;
@@ -294,6 +294,8 @@ function initPhaserGame(){
 
 function handleTouch(e){
   e.preventDefault();
+  _touchActive=true;
+  setTimeout(()=>{_touchActive=false;},150);
   const touch=e.changedTouches[0];
   const canvas=document.querySelector('#game-container canvas');
   if(!canvas) return;
@@ -320,7 +322,7 @@ function createScene(){
       const hoverCol=light?0xf6f669:0xcdd16e;
       const g=scene.add.rectangle(x+CELL/2,y+CELL/2,CELL-1,CELL-1,baseCol);
       g.setInteractive();
-      g.on('pointerdown',()=>onCellClick(r,c));
+      g.on('pointerdown',()=>{ if(_touchActive)return; onCellClick(r,c); });
       g.on('pointerover',()=>{ if(!g.hl) g.setFillStyle(hoverCol); });
       g.on('pointerout', ()=>{ if(!g.hl) g.setFillStyle(baseCol); });
       g.hl=false; g.baseCol=baseCol; g.hoverCol=hoverCol;
