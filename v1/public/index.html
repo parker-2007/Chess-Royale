@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CheshRoyale</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d0d1a; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; font-family:'Segoe UI',sans-serif; }
+  #game-container { position:relative; }
+
+  /* ── Lobby ── */
+  #lobby {
+    position:fixed; inset:0; background:#0d0d1a; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px; z-index:100;
+  }
+  #lobby h1 { font-size:32px; color:#c084fc; font-weight:700; letter-spacing:2px; }
+  #lobby p  { font-size:13px; color:#5050a0; }
+  #lobby input {
+    background:#12122a; border:1px solid #3a3a6a; border-radius:8px;
+    color:#e0e0ff; font-size:18px; padding:10px 16px; text-align:center;
+    width:200px; letter-spacing:4px; text-transform:uppercase; outline:none;
+  }
+  #lobby input:focus { border-color:#8b5cf6; }
+  .lobby-btn {
+    background:#8b5cf6; color:white; border:none; border-radius:8px;
+    padding:12px 28px; font-size:15px; font-weight:600; cursor:pointer; width:200px;
+    transition:background 0.15s;
+  }
+  .lobby-btn:hover { background:#7c3aed; }
+  .lobby-btn.outline { background:transparent; border:1px solid #3a3a6a; color:#8080b0; }
+  .lobby-btn.outline:hover { border-color:#8b5cf6; color:#c084fc; }
+  #lobby-status { font-size:12px; color:#f87171; min-height:18px; }
+  #waiting { font-size:13px; color:#8080b0; display:none; }
+
+  /* ── HUD ── */
+  #ui-overlay {
+    position:absolute; bottom:0; left:0; right:0;
+    display:flex; align-items:flex-end; justify-content:center;
+    gap:8px; padding:8px; pointer-events:none;
+  }
+  .card-slot {
+    background:#12122a; border:1.5px solid #2a2a5a; border-radius:10px;
+    width:72px; padding:8px 4px 6px; display:flex; flex-direction:column;
+    align-items:center; gap:4px; cursor:pointer; pointer-events:all;
+    transition:border-color 0.15s, transform 0.1s; user-select:none;
+  }
+  .card-slot:hover { border-color:#60a5fa; transform:translateY(-3px); }
+  .card-slot.selected { border-color:#60a5fa; border-width:2px; transform:translateY(-4px); }
+  .card-slot.disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+  .card-icon { font-size:28px; line-height:1; }
+  .card-name { font-size:9px; color:#8080b0; text-transform:uppercase; letter-spacing:0.5px; }
+  .card-cost { background:#7c3aed; border-radius:4px; padding:1px 7px; font-size:11px; color:#e0d0ff; font-weight:600; }
+  .card-cost.red { background:#dc2626; }
+  #next-card {
+    background:#0d0d1a; border:0.5px dashed #2a2a5a; border-radius:8px;
+    width:52px; padding:6px 4px; display:flex; flex-direction:column;
+    align-items:center; gap:3px; opacity:0.6;
+  }
+  #elixir-bar-container {
+    position:absolute; left:8px; top:50%; transform:translateY(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+  }
+  #elixir-track {
+    width:14px; height:280px; background:#1e1e3a; border-radius:7px;
+    overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end;
+  }
+  #elixir-fill { width:100%; height:0%; background:#8b5cf6; border-radius:7px; transition:height 0.1s linear; }
+  #elixir-val { font-size:12px; color:#c084fc; font-weight:600; }
+  #player-labels {
+    position:absolute; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; padding:6px 10px; pointer-events:none;
+  }
+  .plabel { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; }
+  .pdot { width:8px; height:8px; border-radius:50%; }
+  #hotkeys { position:absolute; bottom:105px; left:50%; transform:translateX(-50%); font-size:9px; color:#2a2a5a; pointer-events:none; white-space:nowrap; }
+  #not-your-turn {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(10,10,30,0.7); color:#5050a0; font-size:13px;
+    padding:8px 18px; border-radius:8px; border:1px solid #2a2a4a;
+    pointer-events:none; display:none;
+  }
+  #gameover {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(10,10,30,0.98); border:1px solid #8b5cf6; border-radius:14px;
+    padding:24px 40px; text-align:center; display:none; z-index:20;
+  }
+  #gameover h1 { font-size:26px; margin-bottom:8px; }
+  #gameover button {
+    margin-top:16px; background:#8b5cf6; color:white; border:none;
+    border-radius:8px; padding:10px 24px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  #disconnected {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(10,10,30,0.98); border:1px solid #dc2626; border-radius:14px;
+    padding:24px 40px; text-align:center; display:none; z-index:30;
+  }
+  #disconnected h2 { color:#f87171; margin-bottom:8px; }
+  #disconnected p { color:#8080b0; font-size:13px; }
+</style>
+</head>
+<body>
+
+<!-- ── Lobby ── -->
+<div id="lobby">
+  <h1>CheshRoyale</h1>
+  <p>Chess meets Clash Royale</p>
+  <input id="room-input" maxlength="6" placeholder="ROOM CODE" />
+  <button class="lobby-btn" onclick="createRoom()">Create Room</button>
+  <button class="lobby-btn outline" onclick="joinRoom()">Join Room</button>
+  <div id="lobby-status"></div>
+  <div id="waiting">⏳ Waiting for opponent to join...</div>
+</div>
+
+<!-- ── Game ── -->
+<div id="game-container" style="display:none;">
+  <div id="player-labels">
+    <div class="plabel" style="color:#f87171;"><div class="pdot" style="background:#f87171;"></div><span id="p2label">Player 2 (Red)</span></div>
+    <div class="plabel" style="color:#60a5fa;"><span id="p1label">Player 1 (Blue)</span><div class="pdot" style="background:#60a5fa;"></div></div>
+  </div>
+
+  <div id="elixir-bar-container">
+    <span style="font-size:10px;color:#6060a0;">21</span>
+    <div id="elixir-track"><div id="elixir-fill"></div></div>
+    <span id="elixir-val">0</span>
+    <span style="font-size:8px;color:#4040a0;">elixir</span>
+  </div>
+
+  <div id="ui-overlay">
+    <div class="card-slot" id="card0" onclick="selectCard(0)">
+      <div class="card-icon" id="icon0">♟</div>
+      <div class="card-name" id="cname0">Pawn</div>
+      <div class="card-cost" id="ccost0">2</div>
+    </div>
+    <div class="card-slot" id="card1" onclick="selectCard(1)">
+      <div class="card-icon" id="icon1">♞</div>
+      <div class="card-name" id="cname1">Knight</div>
+      <div class="card-cost" id="ccost1">5</div>
+    </div>
+    <div class="card-slot" id="card2" onclick="selectCard(2)">
+      <div class="card-icon" id="icon2">♜</div>
+      <div class="card-name" id="cname2">Rook</div>
+      <div class="card-cost" id="ccost2">7</div>
+    </div>
+    <div id="next-card">
+      <div style="font-size:8px;color:#4040a0;text-transform:uppercase;">next</div>
+      <div class="card-icon" id="next-icon" style="font-size:20px;">♝</div>
+      <div style="font-size:8px;color:#4040a0;" id="next-name">Bishop</div>
+    </div>
+  </div>
+
+  <div id="hotkeys">press 1/2/3 to select card · click piece to move · ESC to deselect</div>
+  <div id="not-your-turn">Opponent's turn — wait for them to move</div>
+
+  <div id="gameover">
+    <h1 id="go-title">You Win!</h1>
+    <p style="color:#8080b0;font-size:13px;">The king has been captured.</p>
+    <button onclick="location.reload()">Play Again</button>
+  </div>
+
+  <div id="disconnected">
+    <h2>Opponent Disconnected</h2>
+    <p>The game has ended.</p>
+  </div>
+</div>
+
+<script>
+// ── Socket ─────────────────────────────────────────────────────────────────
+const socket = io();
+let myPlayerIdx = -1; // 0 = P1 blue, 1 = P2 red
+
+const PIECE_ICONS = { king:'♔', queen:'♛', rook:'♜', bishop:'♝', knight:'♞', pawn:'♟' };
+const PIECE_NAMES = { king:'King', queen:'Queen', rook:'Rook', bishop:'Bishop', knight:'Knight', pawn:'Pawn' };
+const PIECE_DEPLOY = { king:0, queen:10, rook:7, bishop:5, knight:5, pawn:2 };
+function moveCostClient(type, fromRow, fromCol, toRow, toCol) {
+  const d = Math.max(Math.abs(toRow-fromRow), Math.abs(toCol-fromCol));
+  const costs = { king:10, queen:3, rook:2, bishop:2, knight:()=>5, pawn:1 };
+  return type==='knight' ? 5 : d * costs[type];
+}
+
+// ── Lobby ──────────────────────────────────────────────────────────────────
+function setStatus(msg, isError=false) {
+  const el = document.getElementById('lobby-status');
+  el.textContent = msg;
+  el.style.color = isError ? '#f87171' : '#8080b0';
+}
+
+function createRoom() {
+  const code = document.getElementById('room-input').value.trim().toUpperCase();
+  if (!code || code.length < 2) { setStatus('Enter a room code first', true); return; }
+  socket.emit('createRoom', code);
+}
+
+function joinRoom() {
+  const code = document.getElementById('room-input').value.trim().toUpperCase();
+  if (!code || code.length < 2) { setStatus('Enter the room code', true); return; }
+  socket.emit('joinRoom', code);
+}
+
+socket.on('joined', ({ playerIdx, roomCode }) => {
+  myPlayerIdx = playerIdx;
+  if (playerIdx === 0) {
+    setStatus('');
+    document.getElementById('waiting').style.display = 'block';
+  }
+});
+
+socket.on('error', (msg) => setStatus(msg, true));
+
+socket.on('gameStart', () => {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game-container').style.display = 'block';
+  if (myPlayerIdx === 1) {
+    document.getElementById('p1label').textContent = 'Opponent (Blue)';
+    document.getElementById('p2label').textContent = 'You (Red)';
+  } else {
+    document.getElementById('p1label').textContent = 'You (Blue)';
+    document.getElementById('p2label').textContent = 'Opponent (Red)';
+  }
+  initPhaserGame();
+});
+
+socket.on('playerLeft', () => {
+  document.getElementById('disconnected').style.display = 'block';
+});
+
+// ── Game State ─────────────────────────────────────────────────────────────
+let gameState = null;
+let selected = null;
+let selectedCard = -1;
+
+socket.on('state', (state) => {
+  gameState = state;
+  if (state.gameOver) {
+    const won = state.winner === myPlayerIdx + 1;
+    document.getElementById('go-title').textContent = won ? '👑 You Win!' : '💀 You Lose';
+    document.getElementById('go-title').style.color = won ? '#60a5fa' : '#f87171';
+    document.getElementById('gameover').style.display = 'block';
+  }
+  renderAll();
+});
+
+// ── Phaser ─────────────────────────────────────────────────────────────────
+const CELL = 64;
+let scene, cellGraphics = [], pieceTexts = [], costTexts = [];
+
+function initPhaserGame() {
+  const config = {
+    type: Phaser.AUTO,
+    width: 8 * CELL + 32,
+    height: 8 * CELL + 110,
+    backgroundColor: '#0d0d1a',
+    parent: 'game-container',
+    scene: { create: createScene }
+  };
+  new Phaser.Game(config);
+}
+
+function createScene() {
+  scene = this;
+  for (let r = 0; r < 8; r++) {
+    cellGraphics[r] = []; pieceTexts[r] = []; costTexts[r] = [];
+    for (let c = 0; c < 8; c++) {
+      const x = c * CELL + 16, y = r * CELL + 24;
+      const g = scene.add.rectangle(x + CELL/2, y + CELL/2, CELL-1, CELL-1, (r+c)%2===0 ? 0x2d2d50 : 0x1e1e3a);
+      g.setInteractive();
+      g.on('pointerdown', () => onCellClick(r, c));
+      g.on('pointerover', () => { if (!g.hl) g.setFillStyle((r+c)%2===0 ? 0x3a3a60 : 0x2a2a4a); });
+      g.on('pointerout',  () => { if (!g.hl) g.setFillStyle((r+c)%2===0 ? 0x2d2d50 : 0x1e1e3a); });
+      g.hl = false;
+      cellGraphics[r][c] = g;
+
+      pieceTexts[r][c] = scene.add.text(x+CELL/2, y+CELL/2, '', {
+        fontSize:'30px', color:'#ffffff'
+      }).setOrigin(0.5, 0.5);
+
+      costTexts[r][c] = scene.add.text(x+CELL-4, y+4, '', {
+        fontSize:'11px', fontStyle:'bold', stroke:'#000000', strokeThickness:3
+      }).setOrigin(1, 0).setDepth(10);
+    }
+  }
+  // home row glow
+  scene.add.rectangle(16 + 4*CELL, 24 + (myPlayerIdx===0?7:0)*CELL + CELL/2, 8*CELL-2, CELL-2, 0x001a00, 0)
+    .setStrokeStyle(1, 0x1a4a1a);
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────
+function renderAll() {
+  if (!scene || !gameState) return;
+  const { board, elixir, hands, queueNexts } = gameState;
+  const myElixir = elixir[myPlayerIdx];
+  const myHand = hands[myPlayerIdx];
+
+  // Board
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      const g = cellGraphics[r][c];
+      const t = pieceTexts[r][c];
+      const ct = costTexts[r][c];
+      g.hl = false;
+      ct.setText('');
+      g.setFillStyle((r+c)%2===0 ? 0x2d2d50 : 0x1e1e3a);
+      if (piece) {
+        t.setText(PIECE_ICONS[piece.type]);
+        t.setColor(piece.player===1 ? '#93c5fd' : '#fca5a5');
+        t.setFontSize(piece.type==='king' ? '34px' : '28px');
+        if (selected && selected.row===r && selected.col===c) {
+          g.setFillStyle(0x1e3a5a); g.hl = true;
+        }
+      } else {
+        t.setText('');
+      }
+    }
+  }
+
+  // Valid move highlights with costs
+  if (selected) {
+    const piece = board[selected.row][selected.col];
+    if (piece) {
+      const moves = getValidMovesClient(board, selected.row, selected.col, myPlayerIdx+1);
+      moves.forEach(({ row, col }) => {
+        const cost = moveCostClient(piece.type, selected.row, selected.col, row, col);
+        const canAfford = myElixir >= cost;
+        const isCapture = !!board[row][col];
+        cellGraphics[row][col].setFillStyle(isCapture ? 0x5a1a1a : (canAfford ? 0x1a3a1a : 0x2a2a1a));
+        cellGraphics[row][col].hl = true;
+        costTexts[row][col].setText(cost);
+        costTexts[row][col].setColor(canAfford ? '#86efac' : '#f87171');
+      });
+    }
+  }
+
+  // Elixir bar
+  const pct = (myElixir / 21) * 100;
+  document.getElementById('elixir-fill').style.height = pct + '%';
+  document.getElementById('elixir-val').textContent = Math.floor(myElixir);
+
+  // Cards
+  myHand.forEach((type, i) => {
+    document.getElementById('icon'+i).textContent = PIECE_ICONS[type];
+    document.getElementById('cname'+i).textContent = PIECE_NAMES[type];
+    const cost = PIECE_DEPLOY[type];
+    const costEl = document.getElementById('ccost'+i);
+    costEl.textContent = cost;
+    const canAfford = myElixir >= cost;
+    document.getElementById('card'+i).className = 'card-slot' + (selectedCard===i ? ' selected' : '') + (canAfford ? '' : ' disabled');
+    costEl.className = 'card-cost' + (canAfford ? '' : ' red');
+  });
+
+  // Next card
+  const nextType = queueNexts[myPlayerIdx];
+  if (nextType) {
+    document.getElementById('next-icon').textContent = PIECE_ICONS[nextType];
+    document.getElementById('next-name').textContent = PIECE_NAMES[nextType];
+  }
+
+  // Not your turn overlay — hide it (both play simultaneously now)
+  document.getElementById('not-your-turn').style.display = 'none';
+}
+
+// ── Client-side move validation (mirrors server) ───────────────────────────
+function getValidMovesClient(board, row, col, playerNum) {
+  const piece = board[row][col];
+  if (!piece) return [];
+  const moves = [];
+  const p = piece.player;
+  const dir = p===1 ? -1 : 1;
+
+  function add(r, c) {
+    if (r<0||r>=8||c<0||c>=8) return false;
+    const t = board[r][c];
+    if (t && t.player===p) return false;
+    moves.push({row:r,col:c});
+    return !t;
+  }
+  function slide(dr,dc) { for(let i=1;i<8;i++) if(!add(row+dr*i,col+dc*i)) break; }
+
+  switch(piece.type) {
+    case 'king': for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++) if(dr||dc) add(row+dr,col+dc); break;
+    case 'queen': slide(1,0);slide(-1,0);slide(0,1);slide(0,-1);slide(1,1);slide(1,-1);slide(-1,1);slide(-1,-1); break;
+    case 'rook':  slide(1,0);slide(-1,0);slide(0,1);slide(0,-1); break;
+    case 'bishop':slide(1,1);slide(1,-1);slide(-1,1);slide(-1,-1); break;
+    case 'knight': [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]].forEach(([dr,dc])=>add(row+dr,col+dc)); break;
+    case 'pawn': {
+      const fr = row+dir;
+      if(fr>=0&&fr<8&&!board[fr][col]) {
+        moves.push({row:fr,col});
+        const startRow = p===1?6:1;
+        if(row===startRow&&!board[row+dir*2]?.[col]) moves.push({row:row+dir*2,col});
+      }
+      [-1,1].forEach(dc=>{ if(col+dc>=0&&col+dc<8&&board[fr]?.[col+dc]?.player&&board[fr][col+dc].player!==p) moves.push({row:fr,col:col+dc}); });
+      break;
+    }
+  }
+  return moves;
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────
+function onCellClick(row, col) {
+  if (!gameState || gameState.gameOver) return;
+  const board = gameState.board;
+  const piece = board[row][col];
+  const myElixir = gameState.elixir[myPlayerIdx];
+
+  // Deploy card
+  if (selectedCard !== -1) {
+    socket.emit('deploy', { cardIdx: selectedCard, row, col });
+    selectedCard = -1;
+    renderAll();
+    return;
+  }
+
+  // Select own piece
+  if (piece && piece.player === myPlayerIdx + 1) {
+    selected = (selected && selected.row===row && selected.col===col) ? null : {row,col};
+    renderAll();
+    return;
+  }
+
+  // Move
+  if (selected) {
+    const selPiece = board[selected.row][selected.col];
+    if (!selPiece) { selected=null; renderAll(); return; }
+    const valid = getValidMovesClient(board, selected.row, selected.col, myPlayerIdx+1).find(m=>m.row===row&&m.col===col);
+    if (!valid) { selected=null; renderAll(); return; }
+    const cost = moveCostClient(selPiece.type, selected.row, selected.col, row, col);
+    if (myElixir < cost) { flashError(); return; }
+    socket.emit('move', { fromRow:selected.row, fromCol:selected.col, toRow:row, toCol:col });
+    selected = null;
+    renderAll();
+  }
+}
+
+function selectCard(i) {
+  if (!gameState) return;
+  const type = gameState.hands[myPlayerIdx][i];
+  if (!type) return;
+  const cost = PIECE_DEPLOY[type];
+  if (gameState.elixir[myPlayerIdx] < cost) return;
+  selectedCard = selectedCard===i ? -1 : i;
+  selected = null;
+  renderAll();
+}
+
+function flashError() {
+  const bar = document.getElementById('elixir-track');
+  bar.style.outline = '2px solid #dc2626';
+  setTimeout(() => bar.style.outline='none', 300);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key==='1') selectCard(0);
+  if (e.key==='2') selectCard(1);
+  if (e.key==='3') selectCard(2);
+  if (e.key==='Escape') { selected=null; selectedCard=-1; renderAll(); }
+});
+</script>
+</body>
+</html>
