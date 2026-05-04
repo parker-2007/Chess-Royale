@@ -120,7 +120,7 @@
   <button class="lobby-btn outline" onclick="joinRoom()">Join Room</button>
   <div id="lobby-status"></div>
   <div id="waiting">⏳ Waiting for opponent...</div>
-  <div id="version">v1.0.0</div>
+  <div id="version">v1.0.1</div>
 </div>
 
 <div id="game-container" style="display:none;">
@@ -287,8 +287,24 @@ function initPhaserGame(){
   new Phaser.Game({
     type:Phaser.AUTO, width:CANVAS_W, height:CANVAS_H,
     backgroundColor:'#111', parent:'game-container',
+    input:{ touch:true, mouse:true },
     scene:{create:createScene}
   });
+}
+
+function handleTouch(e){
+  e.preventDefault();
+  const touch=e.changedTouches[0];
+  const canvas=document.querySelector('#game-container canvas');
+  if(!canvas) return;
+  const rect=canvas.getBoundingClientRect();
+  const scaleX=CANVAS_W/rect.width, scaleY=CANVAS_H/rect.height;
+  const cx=(touch.clientX-rect.left)*scaleX;
+  const cy=(touch.clientY-rect.top)*scaleY;
+  const OX=ELIX_W+2, OY=LABEL_H;
+  const col=Math.floor((cx-OX)/CELL);
+  const row=Math.floor((cy-OY)/CELL);
+  if(row>=0&&row<8&&col>=0&&col<8) onCellClick(row,col);
 }
 
 function createScene(){
@@ -331,6 +347,11 @@ function createScene(){
   const homeRow=myPlayerIdx===0?7:0;
   scene.add.rectangle(OX+BOARD_PX/2,OY+homeRow*CELL+CELL/2,BOARD_PX-2,CELL-2,0x00ff00,0)
     .setStrokeStyle(2,0x22c55e).setDepth(1);
+
+  // Hook native touch on the canvas for mobile
+  const canvas=scene.sys.game.canvas;
+  canvas.style.touchAction='none';
+  canvas.addEventListener('touchstart', handleTouch, {passive:false});
 }
 
 // ── Check detection ────────────────────────────────────────────────────────
